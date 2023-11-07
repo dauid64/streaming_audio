@@ -8,7 +8,7 @@ import queue
 import threading
 
 host_name = socket.gethostname()
-host_ip = 'locahost'
+host_ip = 'localhost'
 print(host_ip)
 port = 9633
 
