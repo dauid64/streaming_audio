@@ -1,22 +1,44 @@
+from pathlib import Path
 import socket
+import wave
+import pyaudio
+
+BASE_DIR = Path(__file__).resolve().parent
+MUSIC_DIR = BASE_DIR / 'music'
 
 HOST = ''
 PORT = 12000
+CHUNK = 10*1024
 
-# Servidor family=IPV4 e type=UDP
-servidor = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+musics_list = list(MUSIC_DIR.glob('*.wav'))
 
-# vamos escutar nesse adress
-servidor.bind((HOST, PORT))
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+server.bind((HOST, PORT))
 
 while True:
-    # Recebe os dados recebidos e o endereco do cliente
-    mensagem_bytes, endereco_ip_client = servidor.recvfrom(1024)
+    msg_bytes, addr_ip_client = server.recvfrom(CHUNK)
+    try:
+        recv_msg = int(msg_bytes.decode())
+        send_msg = 'Iniciando a música'
+        server.sendto(send_msg.encode(), addr_ip_client)
+        music_selected = musics_list[recv_msg]
+        with wave.open(str(music_selected), 'rb') as wf:
+            p = pyaudio.PyAudio()
+            stream = p.open(
+                format=p.get_format_from_width(wf.getsampwidth()),
+                channels=wf.getnchannels(),
+                rate=wf.getframerate(),
+                output=True
+            )
+            while len(data := wf.readframes(CHUNK)):
+                server.sendto(data, addr_ip_client)
 
-    # converte para string e coloca em uppercase
-    mensagem_resposta = mensagem_bytes.decode().upper()
+            send_msg = 'Música acabou'
+            server.sendto(send_msg.encode(), addr_ip_client)
+            stream.close()
 
-    # Manda a resposta para o cliente
-    servidor.sendto(mensagem_resposta.encode(), endereco_ip_client)
-
-    print(mensagem_resposta)
+            p.terminate()
+    except ValueError:
+        send_msg = 'Opção Inválida'
+        server.sendto(send_msg.encode(), addr_ip_client)

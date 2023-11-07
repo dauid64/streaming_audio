@@ -1,13 +1,33 @@
 import socket
+import pyaudio
 
 HOST = 'localhost'
 PORT = 12000
+CHUNK = 4096
 
-# mesma configuração do socket do servidor
+audio = pyaudio.PyAudio()
+FORMAT = 8
+CHANNELS = 2
+RATE = 44100
+
+stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True)
+
 cliente = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 while True:
-    mensagem_envio = input('Digite a mensagem: ')
+    mensagem_envio = input('''
+    Qual dessas musicas você quer escutar?
+    [1] - One of Your Girls
+    [2] - Get me Started
+    [3] - Apocalypse
+    Sua resposta: ''')
     cliente.sendto(mensagem_envio.encode(), (HOST, PORT))
-    mensagem_bytes, endereco_ip_servidor = cliente.recvfrom(1024)
-    print(mensagem_bytes.decode())
+    while True:
+        data, _ = cliente.recvfrom(CHUNK)
+        print('lendo')
+        stream.write(data)
+
+
+# Erros
+# 1 - Não está produzindo bem a música
+# 2 - Não entendi como rodar a musica no cliente
