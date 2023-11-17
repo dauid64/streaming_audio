@@ -18,6 +18,11 @@ musics_list = list(MUSIC_DIR.glob('*.wav'))
 q = queue.Queue(maxsize=2000)
 
 
+# Criando o socket de servidor
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server_socket.bind(('', PORT))
+
+
 def get_dict_musics(musics_list):
     '''
         Retorna a lista de músicas
@@ -30,35 +35,39 @@ def get_dict_musics(musics_list):
     return dict
 
 
-def set_configurate(server_socket):
+def set_commands(server_socket):
     '''
         Essa função tem o objetivo de capturar
-        as msg do usuário para pausar e continuar
-        a música
+        as comandos do usuário e setar na queue
     '''
     while True:
-        message, _ = server_socket.recvfrom(BUFF_SIZE)
-        q.put(message.decode())
-        print('MENSAGEM ', message.decode())
+        try:
+            message, _ = server_socket.recvfrom(BUFF_SIZE)
+            q.put(message.decode())
+            print('MENSAGEM ', message.decode())
+            if message == b'FINISH':
+                break
+        except ConnectionResetError:
+            break
 
 
-def main():
-    # Criando o socket de servidor
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind(('', PORT))
-
+def audio_stream():
     # Recebendo o GET MUSICS
     _, client_addr = server_socket.recvfrom(BUFF_SIZE)
     dict_musics = get_dict_musics(musics_list)
 
     # Enviando o dicionario de músicas codificado
     server_socket.sendto(pickle.dumps(dict_musics), client_addr)
-
     # Recebendo a música selecionada
-    selected_music, _ = server_socket.recvfrom(BUFF_SIZE)
-    wf = wave.open(str(musics_list[int(selected_music.decode())]))
+    try:
+        selected_music, _ = server_socket.recvfrom(BUFF_SIZE)
+        wf = wave.open(str(musics_list[int(selected_music.decode())]))
+    except ValueError:
+        return
     response = 'Música Escolhida com sucesso!'
     server_socket.sendto(response.encode(), client_addr)
+
+    # Enviando o tamanho da música
     message, _ = server_socket.recvfrom(BUFF_SIZE)
     server_socket.sendto(str(wf.getnframes()).encode(), client_addr)
 
@@ -66,17 +75,16 @@ def main():
     sample_rate = wf.getframerate()
 
     t2 = threading.Thread(
-        target=set_configurate,
+        target=set_commands,
         args=(server_socket, )
     )
     t2.start()
 
     pause = False
-    finish = False
 
     while True:
         command = q.get()
-        if finish:
+        if command == 'FINISH':
             break
         if command == 'PAUSE':
             pause = True
@@ -92,7 +100,11 @@ def main():
                     break
                 frame = wf.readframes(CHUNK)
                 if frame == b'':
-                    finish = True
+                    data = {
+                        'frame': 'FINISH',
+                        'current_frame': 'FINISH'
+                    }
+                    server_socket.sendto(pickle.dumps(data), client_addr)
                     break
                 data = {
                     'frame': frame,
@@ -100,10 +112,6 @@ def main():
                 }
                 server_socket.sendto(pickle.dumps(data), client_addr)
                 time.sleep(0.8*CHUNK/sample_rate)
-
-    message = 'FINISH'
-    server_socket.sendto(message.encode(), client_addr)
-
-
-t1 = threading.Thread(target=main, args=())
+    print('FIM DE UMA MÚSICA')
+t1 = threading.Thread(target=audio_stream, args=())
 t1.start()

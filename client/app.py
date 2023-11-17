@@ -21,10 +21,16 @@ def get_audio_data(client_socket):
         Recebe os frames e aloca na fila
     '''
     while True:
-        response, _ = client_socket.recvfrom(BUFF_SIZE)
-        data = pickle.loads(response)
-        q_frame.put(data['frame'])
-        q_current_frame.put(data['current_frame'])
+        try:
+            response, server_addr = client_socket.recvfrom(BUFF_SIZE)
+            data = pickle.loads(response)
+            q_frame.put(data['frame'])
+            if data['frame'] == 'FINISH':
+                client_socket.sendto(b'FINISH', server_addr)
+                break
+            q_current_frame.put(data['current_frame'])
+        except OSError:
+            break
 
 
 def play_audio(stream, window):
@@ -32,13 +38,18 @@ def play_audio(stream, window):
         Pega os frames da fila e escreve na stream
     '''
     while True:
-        frame = q_frame.get()
-        window['progress_bar'].update(q_current_frame.get())
-        stream.write(frame)
+        try:
+            frame = q_frame.get(timeout=5)
+            if frame == 'FINISH':
+                window.write_event_value('FINISH', None)
+                break
+            window['progress_bar'].update(q_current_frame.get())
+            stream.write(frame)
+        except queue.Empty:
+            break
 
 
 # Criando o socket do cliente
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # pegando a lista de músicas do server
@@ -55,16 +66,31 @@ layout = [
     [sg.Text('Bem vindo ao nosso streaming de áudio!', justification='center', size=(100, 1))],
     [sg.Text('Escolha a música que você quer ouvir: '), sg.Combo(values=list(dict_musics.keys()), key='select_music', size=(20,1))],
     [sg.Button('Play', size=(15, 1), pad=(200, 10), key='PLAY')],
-    [sg.Text("", key="status", justification='center', size=(100, 1))]
+    [sg.Text("", key="status", justification='center', size=(100, 1))],
+    [sg.ProgressBar(0, orientation='h', s=(110, 20), key='progress_bar', visible=False)],
+    [
+        sg.Button('Pause', size=(10, 1), key='PAUSE', pad=(80, 10), visible=False),
+        sg.Button('Resume', size=(10, 1), key='RESUME', disabled=True, visible=False),
+        sg.Button('Stop', size=(10, 1), key='STOP', disabled=True, visible=False)
+    ]
 ]
 
-window = sg.Window('Streaming de Aúdio', layout, size=(500, 300))
+window = sg.Window('Streaming de Áudio', layout, size=(500, 300))
 
 while True:
     eventos, valores = window.read()
     if eventos == sg.WINDOW_CLOSED:
+        client_socket.sendto(b'FINISH', server_addr)
+        client_socket.close()
         print('fechando janela.')
         break
+    if eventos == 'FINISH':
+        window['progress_bar'].update(visible=False)
+        window['PLAY'].update(disabled=False)
+        window['PAUSE'].update(visible=False)
+        window['STOP'].update(visible=False)
+        window['RESUME'].update(visible=False)
+        window['status'].update('Escolha outra música!', text_color="yellow")
     if eventos == 'PLAY':
         music = dict_musics.get(valores['select_music'], None)
         if music is None:
@@ -77,17 +103,11 @@ while True:
             client_socket.sendto(str(message).encode(), (HOST, PORT))
             response, _ = client_socket.recvfrom(BUFF_SIZE)
             music_total_frames = int(response.decode())
-            window.extend_layout(window, [[sg.ProgressBar(music_total_frames, orientation='h', s=(110, 20), key='progress_bar')]])
-            window.extend_layout(window, [
-                    [
-                        sg.Button('Pause', size=(10, 1), key='PAUSE', pad=(60, 10)),
-                        sg.Button('Resume', size=(10, 1), key='RESUME', disabled=True),
-                        sg.Button('Stop', size=(10, 1), key='STOP', disabled=True)
-                    ]
-                ]
-            )
-
             window['PLAY'].update(disabled=True)
+            window['progress_bar'].update(current_count=0, max=music_total_frames, visible=True)
+            window['PAUSE'].update(visible=True)
+            window['STOP'].update(visible=True)
+            window['RESUME'].update(visible=True)
             message = 'PLAY'
             client_socket.sendto(message.encode(), (HOST, PORT))
             stream = p.open(
