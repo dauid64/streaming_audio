@@ -47,6 +47,8 @@ def set_commands(server_socket):
             print('MENSAGEM ', message.decode())
             if message == b'FINISH':
                 break
+            # elif message == b'STOP':
+            #     break
         except ConnectionResetError:
             break
 
@@ -62,8 +64,9 @@ def audio_stream():
     try:
         selected_music, _ = server_socket.recvfrom(BUFF_SIZE)
         wf = wave.open(str(musics_list[int(selected_music.decode())]))
+        print('sou o try')
     except ValueError:
-        return
+        return print('Erro ao selecionar música!')
     response = 'Música Escolhida com sucesso!'
     server_socket.sendto(response.encode(), client_addr)
 
@@ -74,16 +77,14 @@ def audio_stream():
     data = None
     sample_rate = wf.getframerate()
 
-    t2 = threading.Thread(
-        target=set_commands,
-        args=(server_socket, )
-    )
+    t2 = threading.Thread(target=set_commands, args=(server_socket, ))
     t2.start()
 
     pause = False
 
     while True:
         command = q.get()
+        print('sou command' + command )
         if command == 'FINISH':
             break
         if command == 'PAUSE':
@@ -91,11 +92,18 @@ def audio_stream():
         elif command == 'STOP':
             pause = True
             wf.rewind()
+            data = {
+                'frame': 'FINISH',
+                'current_frame': 'FINISH'
+            }
+            server_socket.sendto(pickle.dumps(data), client_addr)
+            break
         elif command == 'RESUME':
             pause = False
             q.put('PLAY')
-        elif command == 'PLAY' and pause is not True:
+        elif command == 'PLAY' and pause is False:
             while True:
+                print('sou loop')
                 if q.empty() is not True:
                     break
                 frame = wf.readframes(CHUNK)
@@ -113,5 +121,6 @@ def audio_stream():
                 server_socket.sendto(pickle.dumps(data), client_addr)
                 time.sleep(0.8*CHUNK/sample_rate)
     print('FIM DE UMA MÚSICA')
+#aqui o programa inicia
 t1 = threading.Thread(target=audio_stream, args=())
 t1.start()

@@ -62,7 +62,7 @@ dict_musics = pickle.loads(response)
 sg.theme('DarkAmber')
 
 layout = [
-    [sg.Image("client/assets/logo.png", size=[100, 58], pad=(200, 10))],
+    # [sg.Image("client/assets/logo.png", size=[100, 58], pad=(200, 10))],
     [sg.Text('Bem vindo ao nosso streaming de áudio!', justification='center', size=(100, 1))],
     [sg.Text('Escolha a música que você quer ouvir: '), sg.Combo(values=list(dict_musics.keys()), key='select_music', size=(20,1))],
     [sg.Button('Play', size=(15, 1), pad=(200, 10), key='PLAY')],
@@ -150,6 +150,7 @@ while True:
         window['PAUSE'].update(disabled=True)
         window['STOP'].update(disabled=True)
         window['RESUME'].update(disabled=False)
+        # window['PLAY'].update(disabled = False)
         window['progress_bar'].update(0)
         client_socket.sendto(b'STOP', server_addr)
         print('PARANDO MÚSICA')
