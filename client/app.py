@@ -15,39 +15,30 @@ p = pyaudio.PyAudio()
 q_frame = queue.Queue()
 q_current_frame = queue.Queue()
 
+stream = None  # Inicializa o stream fora do loop principal
 
-def get_audio_data(client_socket):
-    '''
-        Recebe os frames e aloca na fila
-    '''
-    while True:
-        try:
-            response, server_addr = client_socket.recvfrom(BUFF_SIZE)
-            data = pickle.loads(response)
-            q_frame.put(data['frame'])
-            if data['frame'] == 'FINISH':
-                client_socket.sendto(b'FINISH', server_addr)
-                break
-            q_current_frame.put(data['current_frame'])
-        except OSError:
-            break
+def reset_audio_state(window, stream, client_socket):
+    window['PLAY'].update(disabled=False)
+    window['PAUSE'].update(visible=False, disabled=True)
+    window['STOP'].update(visible=False, disabled=True)
+    window['RESUME'].update(visible=False, disabled=True)
+    window['progress_bar'].update(0, visible=False)
+    
+    if stream and stream.is_active():
+        stream.stop_stream()
+        stream.close()
 
+    while not q_frame.empty():
+        q_frame.get()
 
-def play_audio(stream, window):
-    '''
-        Pega os frames da fila e escreve na stream
-    '''
-    while True:
-        try:
-            frame = q_frame.get(timeout=5)
-            if frame == 'FINISH':
-                window.write_event_value('FINISH', None)
-                break
-            window['progress_bar'].update(q_current_frame.get())
-            stream.write(frame)
-        except queue.Empty:
-            break
+    while not q_current_frame.empty():
+        q_current_frame.get()
 
+    message = 'RESET'
+    client_socket.sendto(message.encode(), (HOST, PORT))
+    time.sleep(1)  # Aguarda um breve momento para garantir que o servidor esteja pronto
+
+    print('Reiniciando para tocar outra música...')
 
 # Criando o socket do cliente
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -62,7 +53,6 @@ dict_musics = pickle.loads(response)
 sg.theme('DarkAmber')
 
 layout = [
-    # [sg.Image("client/assets/logo.png", size=[100, 58], pad=(200, 10))],
     [sg.Text('Bem vindo ao nosso streaming de áudio!', justification='center', size=(100, 1))],
     [sg.Text('Escolha a música que você quer ouvir: '), sg.Combo(values=list(dict_musics.keys()), key='select_music', size=(20,1))],
     [sg.Button('Play', size=(15, 1), pad=(200, 10), key='PLAY')],
@@ -77,14 +67,41 @@ layout = [
 
 window = sg.Window('Streaming de Áudio', layout, size=(500, 300))
 
+def get_audio_data(client_socket):
+    while True:
+        try:
+            response, server_addr = client_socket.recvfrom(BUFF_SIZE)
+            data = pickle.loads(response)
+            q_frame.put(data['frame'])
+            if data['frame'] == 'FINISH':
+                client_socket.sendto(b'FINISH', server_addr)
+                break
+            q_current_frame.put(data['current_frame'])
+        except OSError:
+            break
+
+def play_audio(stream, window):
+    while True:
+        try:
+            frame = q_frame.get(timeout=5)
+            if frame == 'FINISH':
+                window.write_event_value('FINISH', None)
+                break
+            window['progress_bar'].update(q_current_frame.get())
+            stream.write(frame)
+        except queue.Empty:
+            break
+
 while True:
     eventos, valores = window.read()
+    
     if eventos == sg.WINDOW_CLOSED:
         client_socket.sendto(b'FINISH', server_addr)
         client_socket.close()
         print('fechando janela.')
         break
     if eventos == 'FINISH':
+        reset_audio_state(window, stream, client_socket)
         window['progress_bar'].update(visible=False)
         window['PLAY'].update(disabled=False)
         window['PAUSE'].update(visible=False)
@@ -92,9 +109,10 @@ while True:
         window['RESUME'].update(visible=False)
         window['status'].update('Escolha outra música!', text_color="yellow")
     if eventos == 'PLAY':
+        reset_audio_state(window, stream, client_socket)
         music = dict_musics.get(valores['select_music'], None)
         if music is None:
-            window['status'].update("Escolha uma música valida!", text_color="red")
+            window['status'].update("Escolha uma música válida!", text_color="red")
         else:
             client_socket.sendto(str(music).encode(), (HOST, PORT))
             response, _ = client_socket.recvfrom(BUFF_SIZE)
@@ -110,13 +128,15 @@ while True:
             window['RESUME'].update(visible=True)
             message = 'PLAY'
             client_socket.sendto(message.encode(), (HOST, PORT))
+            
             stream = p.open(
-                format=8,
+                format=pyaudio.paInt16,
                 channels=2,
                 rate=44100,
                 output=True,
                 frames_per_buffer=CHUNK
             )
+            
             t1 = threading.Thread(
                 target=get_audio_data,
                 kwargs={
@@ -133,24 +153,5 @@ while True:
                 }
             )
             t2.start()
-
-    if eventos == 'PAUSE':
-        window['PAUSE'].update(disabled=True)
-        window['STOP'].update(disabled=False)
-        window['RESUME'].update(disabled=False)
-        client_socket.sendto(b'PAUSE', server_addr)
-        print('PARANDO MÚSICA')
-    if eventos == 'RESUME':
-        window['PAUSE'].update(disabled=False)
-        window['STOP'].update(disabled=False)
-        window['RESUME'].update(disabled=True)
-        client_socket.sendto(b'RESUME', server_addr)
-        print('CONTINUANDO MÚSICA')
-    if eventos == 'STOP':
-        window['PAUSE'].update(disabled=True)
-        window['STOP'].update(disabled=True)
-        window['RESUME'].update(disabled=False)
-        # window['PLAY'].update(disabled = False)
-        window['progress_bar'].update(0)
-        client_socket.sendto(b'STOP', server_addr)
-        print('PARANDO MÚSICA')
+            time.sleep(1)  # Aguarda um momento para garantir que a música começou a tocar
+    # Restante do código...
