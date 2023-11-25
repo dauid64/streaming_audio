@@ -1,0 +1,107 @@
+Index: client/app.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import PySimpleGUI as sg\r\nimport socket\r\nimport queue\r\nimport pickle\r\nimport pyaudio\r\nimport time\r\nimport threading\r\n\r\n# Setando constantes\r\nHOST = 'localhost'\r\nPORT = 12000\r\nBUFF_SIZE = 65536\r\nCHUNK = 10*1024\r\np = pyaudio.PyAudio()\r\nq_frame = queue.Queue()\r\nq_current_frame = queue.Queue()\r\n\r\n\r\ndef get_audio_data(client_socket):\r\n    '''\r\n        Recebe os frames e aloca na fila\r\n    '''\r\n    while True:\r\n        try:\r\n            response, server_addr = client_socket.recvfrom(BUFF_SIZE)\r\n            data = pickle.loads(response)\r\n            q_frame.put(data['frame'])\r\n            if data['frame'] == 'FINISH':\r\n                client_socket.sendto(b'FINISH', server_addr)\r\n                break\r\n            q_current_frame.put(data['current_frame'])\r\n        except OSError:\r\n            break\r\n\r\n\r\ndef play_audio(stream, window):\r\n    '''\r\n        Pega os frames da fila e escreve na stream\r\n    '''\r\n    while True:\r\n        try:\r\n            frame = q_frame.get(timeout=5)\r\n            if frame == 'FINISH':\r\n                window.write_event_value('FINISH', None)\r\n                break\r\n            window['progress_bar'].update(q_current_frame.get())\r\n            stream.write(frame)\r\n        except queue.Empty:\r\n            break\r\n\r\n\r\n# Criando o socket do cliente\r\nclient_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\r\n\r\n# pegando a lista de músicas do server\r\nmessage = 'GET MUSICS'\r\nclient_socket.sendto(message.encode(), (HOST, PORT))\r\nresponse, server_addr = client_socket.recvfrom(BUFF_SIZE)\r\ndict_musics = pickle.loads(response)\r\n\r\n# Interface\r\nsg.theme('DarkAmber')\r\n\r\nlayout = [\r\n    [sg.Image(\"client/assets/logo.png\", size=[100, 58], pad=(200, 10))],\r\n    [sg.Text('Bem vindo ao nosso streaming de áudio!', justification='center', size=(100, 1))],\r\n    [sg.Text('Escolha a música que você quer ouvir: '), sg.Combo(values=list(dict_musics.keys()), key='select_music', size=(20,1))],\r\n    [sg.Button('Play', size=(15, 1), pad=(200, 10), key='PLAY')],\r\n    [sg.Text(\"\", key=\"status\", justification='center', size=(100, 1))],\r\n    [sg.ProgressBar(0, orientation='h', s=(110, 20), key='progress_bar', visible=False)],\r\n    [\r\n        sg.Button('Pause', size=(10, 1), key='PAUSE', pad=(80, 10), visible=False),\r\n        sg.Button('Resume', size=(10, 1), key='RESUME', disabled=True, visible=False),\r\n        sg.Button('Stop', size=(10, 1), key='STOP', disabled=True, visible=False)\r\n    ]\r\n]\r\n\r\nwindow = sg.Window('Streaming de Áudio', layout, size=(500, 300))\r\n\r\nwhile True:\r\n    eventos, valores = window.read()\r\n    if eventos == sg.WINDOW_CLOSED:\r\n        client_socket.sendto(b'FINISH', server_addr)\r\n        client_socket.close()\r\n        print('fechando janela.')\r\n        break\r\n    if eventos == 'FINISH':\r\n        window['progress_bar'].update(visible=False)\r\n        window['PLAY'].update(disabled=False)\r\n        window['PAUSE'].update(visible=False)\r\n        window['STOP'].update(visible=False)\r\n        window['RESUME'].update(visible=False)\r\n        window['status'].update('Escolha outra música!', text_color=\"yellow\")\r\n    if eventos == 'PLAY':\r\n        music = dict_musics.get(valores['select_music'], None)\r\n        if music is None:\r\n            window['status'].update(\"Escolha uma música valida!\", text_color=\"red\")\r\n        else:\r\n            client_socket.sendto(str(music).encode(), (HOST, PORT))\r\n            response, _ = client_socket.recvfrom(BUFF_SIZE)\r\n            window['status'].update(f\"{response.decode()}\", text_color=\"green\")\r\n            message = 'GET SIZE_MUSIC'\r\n            client_socket.sendto(str(message).encode(), (HOST, PORT))\r\n            response, _ = client_socket.recvfrom(BUFF_SIZE)\r\n            music_total_frames = int(response.decode())\r\n            window['PLAY'].update(disabled=True)\r\n            window['progress_bar'].update(current_count=0, max=music_total_frames, visible=True)\r\n            window['PAUSE'].update(visible=True)\r\n            window['STOP'].update(visible=True)\r\n            window['RESUME'].update(visible=True)\r\n            message = 'PLAY'\r\n            client_socket.sendto(message.encode(), (HOST, PORT))\r\n            stream = p.open(\r\n                format=8,\r\n                channels=2,\r\n                rate=44100,\r\n                output=True,\r\n                frames_per_buffer=CHUNK\r\n            )\r\n            t1 = threading.Thread(\r\n                target=get_audio_data,\r\n                kwargs={\r\n                    'client_socket': client_socket,\r\n                }\r\n            )\r\n            t1.start()\r\n            time.sleep(5)\r\n            t2 = threading.Thread(\r\n                target=play_audio,\r\n                kwargs={\r\n                    'stream': stream,\r\n                    'window': window\r\n                }\r\n            )\r\n            t2.start()\r\n\r\n    if eventos == 'PAUSE':\r\n        window['PAUSE'].update(disabled=True)\r\n        window['STOP'].update(disabled=False)\r\n        window['RESUME'].update(disabled=False)\r\n        client_socket.sendto(b'PAUSE', server_addr)\r\n        print('PARANDO MÚSICA')\r\n    if eventos == 'RESUME':\r\n        window['PAUSE'].update(disabled=False)\r\n        window['STOP'].update(disabled=False)\r\n        window['RESUME'].update(disabled=True)\r\n        client_socket.sendto(b'RESUME', server_addr)\r\n        print('CONTINUANDO MÚSICA')\r\n    if eventos == 'STOP':\r\n        window['PAUSE'].update(disabled=True)\r\n        window['STOP'].update(disabled=True)\r\n        window['RESUME'].update(disabled=False)\r\n        window['progress_bar'].update(0)\r\n        client_socket.sendto(b'STOP', server_addr)\r\n        print('PARANDO MÚSICA')\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/client/app.py b/client/app.py
+--- a/client/app.py	
++++ b/client/app.py	
+@@ -6,11 +6,13 @@
+ import time
+ import threading
+ 
++
+ # Setando constantes
+ HOST = 'localhost'
+ PORT = 12000
+ BUFF_SIZE = 65536
+ CHUNK = 10*1024
++
+ p = pyaudio.PyAudio()
+ q_frame = queue.Queue()
+ q_current_frame = queue.Queue()
+@@ -62,7 +64,7 @@
+ sg.theme('DarkAmber')
+ 
+ layout = [
+-    [sg.Image("client/assets/logo.png", size=[100, 58], pad=(200, 10))],
++    [sg.Image("../client/logo.png", size=[100, 58], pad=(200, 10))],
+     [sg.Text('Bem vindo ao nosso streaming de áudio!', justification='center', size=(100, 1))],
+     [sg.Text('Escolha a música que você quer ouvir: '), sg.Combo(values=list(dict_musics.keys()), key='select_music', size=(20,1))],
+     [sg.Button('Play', size=(15, 1), pad=(200, 10), key='PLAY')],
+@@ -71,7 +73,8 @@
+     [
+         sg.Button('Pause', size=(10, 1), key='PAUSE', pad=(80, 10), visible=False),
+         sg.Button('Resume', size=(10, 1), key='RESUME', disabled=True, visible=False),
+-        sg.Button('Stop', size=(10, 1), key='STOP', disabled=True, visible=False)
++        sg.Button('Stop', size=(10, 1), key='STOP', disabled=True, visible=False),
++
+     ]
+ ]
+ 
+@@ -82,7 +85,7 @@
+     if eventos == sg.WINDOW_CLOSED:
+         client_socket.sendto(b'FINISH', server_addr)
+         client_socket.close()
+-        print('fechando janela.')
++        # print('fechando janela.')
+         break
+     if eventos == 'FINISH':
+         window['progress_bar'].update(visible=False)
+@@ -139,17 +142,17 @@
+         window['STOP'].update(disabled=False)
+         window['RESUME'].update(disabled=False)
+         client_socket.sendto(b'PAUSE', server_addr)
+-        print('PARANDO MÚSICA')
++        print('PARANDO MÚSICA...')
+     if eventos == 'RESUME':
+         window['PAUSE'].update(disabled=False)
+         window['STOP'].update(disabled=False)
+         window['RESUME'].update(disabled=True)
+         client_socket.sendto(b'RESUME', server_addr)
+-        print('CONTINUANDO MÚSICA')
++        print('CONTINUANDO MÚSICA...')
+     if eventos == 'STOP':
+         window['PAUSE'].update(disabled=True)
+         window['STOP'].update(disabled=True)
+         window['RESUME'].update(disabled=False)
+         window['progress_bar'].update(0)
+         client_socket.sendto(b'STOP', server_addr)
+-        print('PARANDO MÚSICA')
++        print('PARANDO MÚSICA...')
+Index: server/app.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import socket\r\nfrom pathlib import Path\r\nimport pickle\r\nimport wave\r\nimport time\r\nimport pickle\r\nimport threading\r\nimport queue\r\nimport os\r\n\r\n# Setando constantes\r\nPORT = 12000\r\nBUFF_SIZE = 65536\r\nCHUNK = 10*1024\r\nBASE_DIR = Path(__file__).resolve().parent\r\nMUSIC_DIR = BASE_DIR / 'music'\r\nmusics_list = list(MUSIC_DIR.glob('*.wav'))\r\nq = queue.Queue(maxsize=2000)\r\n\r\n\r\n# Criando o socket de servidor\r\nserver_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\r\nserver_socket.bind(('', PORT))\r\n\r\n\r\ndef get_dict_musics(musics_list):\r\n    '''\r\n        Retorna a lista de músicas\r\n        em um dicionario\r\n    '''\r\n    dict = {}\r\n    for i in range(0, len(musics_list)):\r\n        name = os.path.basename(str(musics_list[i])).split('.')[0]\r\n        dict[name] = i\r\n    return dict\r\n\r\n\r\ndef set_commands(server_socket):\r\n    '''\r\n        Essa função tem o objetivo de capturar\r\n        as comandos do usuário e setar na queue\r\n    '''\r\n    while True:\r\n        try:\r\n            message, _ = server_socket.recvfrom(BUFF_SIZE)\r\n            q.put(message.decode())\r\n            print('MENSAGEM ', message.decode())\r\n            if message == b'FINISH':\r\n                break\r\n        except ConnectionResetError:\r\n            break\r\n\r\n\r\ndef audio_stream():\r\n    # Recebendo o GET MUSICS\r\n    _, client_addr = server_socket.recvfrom(BUFF_SIZE)\r\n    dict_musics = get_dict_musics(musics_list)\r\n\r\n    # Enviando o dicionario de músicas codificado\r\n    server_socket.sendto(pickle.dumps(dict_musics), client_addr)\r\n    # Recebendo a música selecionada\r\n    try:\r\n        selected_music, _ = server_socket.recvfrom(BUFF_SIZE)\r\n        wf = wave.open(str(musics_list[int(selected_music.decode())]))\r\n    except ValueError:\r\n        return\r\n    response = 'Música Escolhida com sucesso!'\r\n    server_socket.sendto(response.encode(), client_addr)\r\n\r\n    # Enviando o tamanho da música\r\n    message, _ = server_socket.recvfrom(BUFF_SIZE)\r\n    server_socket.sendto(str(wf.getnframes()).encode(), client_addr)\r\n\r\n    data = None\r\n    sample_rate = wf.getframerate()\r\n\r\n    t2 = threading.Thread(\r\n        target=set_commands,\r\n        args=(server_socket, )\r\n    )\r\n    t2.start()\r\n\r\n    pause = False\r\n\r\n    while True:\r\n        command = q.get()\r\n        if command == 'FINISH':\r\n            break\r\n        if command == 'PAUSE':\r\n            pause = True\r\n        elif command == 'STOP':\r\n            pause = True\r\n            wf.rewind()\r\n        elif command == 'RESUME':\r\n            pause = False\r\n            q.put('PLAY')\r\n        elif command == 'PLAY' and pause is not True:\r\n            while True:\r\n                if q.empty() is not True:\r\n                    break\r\n                frame = wf.readframes(CHUNK)\r\n                if frame == b'':\r\n                    data = {\r\n                        'frame': 'FINISH',\r\n                        'current_frame': 'FINISH'\r\n                    }\r\n                    server_socket.sendto(pickle.dumps(data), client_addr)\r\n                    break\r\n                data = {\r\n                    'frame': frame,\r\n                    'current_frame': wf.tell()\r\n                }\r\n                server_socket.sendto(pickle.dumps(data), client_addr)\r\n                time.sleep(0.8*CHUNK/sample_rate)\r\n    print('FIM DE UMA MÚSICA')\r\nt1 = threading.Thread(target=audio_stream, args=())\r\nt1.start()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/server/app.py b/server/app.py
+--- a/server/app.py	
++++ b/server/app.py	
+@@ -53,6 +53,7 @@
+ 
+ def audio_stream():
+     # Recebendo o GET MUSICS
++    print('Servidor Iniciado!')
+     _, client_addr = server_socket.recvfrom(BUFF_SIZE)
+     dict_musics = get_dict_musics(musics_list)
+ 
+@@ -73,6 +74,7 @@
+ 
+     data = None
+     sample_rate = wf.getframerate()
++    print(sample_rate)
+ 
+     t2 = threading.Thread(
+         target=set_commands,
+@@ -112,6 +114,6 @@
+                 }
+                 server_socket.sendto(pickle.dumps(data), client_addr)
+                 time.sleep(0.8*CHUNK/sample_rate)
+-    print('FIM DE UMA MÚSICA')
++    print('Musica Finalizada')
+ t1 = threading.Thread(target=audio_stream, args=())
+ t1.start()

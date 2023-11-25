@@ -31,7 +31,7 @@ Antes de começar, verifique se você atendeu aos seguintes requisitos:
 
 ## 🚀 Instalando Streaming de Áudio
 
-Para instalar o Streaming de Áudio, siga estas etapas:
+Para instalar o Streaming de Áudio é necessário instalar algumas dependências de bibliotecas, siga estas etapas:
 
 Linux e macOS:
 
