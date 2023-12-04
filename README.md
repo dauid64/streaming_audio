@@ -10,17 +10,19 @@
     <img src="https://github.com/dauid64/streaming_audio/assets/94979678/2fd96c08-5096-450d-ba35-3ba28e4ca2fd" alt="Exemplo imagem">
 </p>
 
-> Linha adicional de texto informativo sobre o que o projeto faz. Sua introdução deve ter cerca de 2 ou 3 linhas. Não exagere, as pessoas não vão ler.
+> Este é um projeto para a disciplina de Redes de Computadores na UnB, com o objetivo de criar um sistema de streaming de áudio utilizando sockets.
 
-### Ajustes e melhorias
+### Requisitos
 
-O projeto ainda está em desenvolvimento e as próximas atualizações serão voltadas nas seguintes tarefas:
-
-- [x] Tarefa 1
-- [x] Tarefa 2
-- [x] Tarefa 3
-- [ ] Tarefa 4
-- [ ] Tarefa 5
+- [x] Cliente deve poder recuperar a lista de m´usicas no servidor
+- [x] Cliente deve poder clicar para tocar uma m´usica hospedada no servidor
+- [x] Se o cliente tentar tocar a m´usica e ela n˜ao estiver em cache local, buscar no servidor
+- [x] O servidor deve transmitir a m´usica em blocos de 5 segundos de ´audio
+- [x] O cliente deve poder pausar a m´usica, o que deve interromper a bufferiza¸c˜ao
+- [x] Se o cliente retomar a execu¸c˜ao do ponto parado ou reiniciar a m´usica, o buffer local deve ser
+consumido
+- [ ] Diferentes clientes devem ser capazes de se descobrir em uma rede local
+- [ ] Clientes devem ser capazes de tocar a m´usica em um cliente remoto
 
 ## 💻 Pré-requisitos
 
