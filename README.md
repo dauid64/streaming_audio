@@ -14,15 +14,15 @@
 
 ### Requisitos
 
-- [x] Cliente deve poder recuperar a lista de m´usicas no servidor
-- [x] Cliente deve poder clicar para tocar uma m´usica hospedada no servidor
-- [x] Se o cliente tentar tocar a m´usica e ela n˜ao estiver em cache local, buscar no servidor
-- [x] O servidor deve transmitir a música em blocos de 5 segundos de ´audio
-- [x] O cliente deve poder pausar a música, o que deve interromper a bufferiza¸c˜ao
-- [x] Se o cliente retomar a execução do ponto parado ou reiniciar a m´usica, o buffer local deve ser
+- [x] Cliente deve poder recuperar a lista de músicas no servidor
+- [x] Cliente deve poder clicar para tocar uma música hospedada no servidor
+- [x] Se o cliente tentar tocar a música e ela não estiver em cache local, buscar no servidor
+- [x] O servidor deve transmitir a música em blocos de 5 segundos de áudio
+- [x] O cliente deve poder pausar a música, o que deve interromper a bufferização
+- [x] Se o cliente retomar a execução do ponto parado ou reiniciar a música, o buffer local deve ser
 consumido
 - [ ] Diferentes clientes devem ser capazes de se descobrir em uma rede local
-- [ ] Clientes devem ser capazes de tocar a m´usica em um cliente remoto
+- [ ] Clientes devem ser capazes de tocar a música em um cliente remoto
 
 ## 💻 Pré-requisitos
 
